@@ -61,19 +61,6 @@ class ServiceConsumer @Inject()()(implicit val config: ConfigEvent, actorSystem:
       .map(ae =>
         DtoAverageEvent(ae.eventType, (ae.value / ae.processedCount), ae.processedCount)
       )
-
-//    source
-//        .map(recordToEvent)
-//        .filter { me =>
-//          me.isDefined &&
-//          me.get.eventType == eventType &&
-//          me.get.timestamp >= from &&
-//          me.get.timestamp <= to
-//        }
-//        .runWith(sink)
-//        .map(ae =>
-//          DtoAverageEvent(ae.eventType, (ae.value / ae.processedCount), ae.processedCount)
-//        )
   }
 
   private def recordToEvent: Flow[Record, Option[ModelEvent], NotUsed] = {
@@ -81,15 +68,7 @@ class ServiceConsumer @Inject()()(implicit val config: ConfigEvent, actorSystem:
       .map { record =>
         val bytes = record.data().asByteArray()
         val str = new String(bytes)
-        logger.debug(str)
         Json.parse(str).validate[ModelEvent].asOpt
       }
   }
-
-//  private def recordToEvent(record: Record): Option[ModelEvent] = {
-//    val bytes = record.data().asByteArray()
-//    val str = new String(bytes)
-//    logger.debug(str)
-//    Json.parse(str).validate[ModelEvent].asOpt
-//  }
 }
