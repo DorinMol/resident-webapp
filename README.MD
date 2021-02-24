@@ -4,6 +4,7 @@ Dev
 ===
 * Copy `dev.template.conf` to `dev.conf` under `conf`
 * Set `stream-name` to your kinesis instance
+* Add `resident-samples.log` file into `resources` folder
 
 Run
 ===

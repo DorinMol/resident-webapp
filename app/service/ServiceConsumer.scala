@@ -1,11 +1,14 @@
 package service
 
+import java.nio.file.Paths
+
 import akka.NotUsed
 import akka.actor.ActorSystem
 import akka.stream.Materializer
 import akka.stream.alpakka.kinesis.scaladsl.KinesisSource
 import akka.stream.alpakka.kinesis.{ShardIterator, ShardSettings}
-import akka.stream.scaladsl.{Flow, Sink, Source}
+import akka.stream.scaladsl.{FileIO, Flow, Sink, Source}
+import akka.util.ByteString
 import com.github.matsluni.akkahttpspi.AkkaHttpClient
 import config.ConfigEvent
 import dto.DtoAverageEvent
@@ -39,25 +42,46 @@ class ServiceConsumer @Inject()()(implicit val config: ConfigEvent, actorSystem:
       .withShardIterator(ShardIterator.TrimHorizon)
 
   def average(eventType: String, from: Long, to: Long): Future[DtoAverageEvent] = {
-    val source: Source[software.amazon.awssdk.services.kinesis.model.Record, NotUsed] =
-      KinesisSource.basic(settings, amazonKinesisAsync)
+//    val source: Source[software.amazon.awssdk.services.kinesis.model.Record, NotUsed] =
+//      KinesisSource.basic(settings, amazonKinesisAsync)
 
-    val sink: Sink[Option[ModelEvent], Future[DtoAverageEvent]] =
-      Sink.fold(DtoAverageEvent(eventType, 0d, 0)){ (a, b) =>
-      a.copy(
-        value = a.value + b.get.value,
-        processedCount = a.processedCount + 1)
-      }
+//    val sink: Sink[Option[ModelEvent], Future[DtoAverageEvent]] =
+//      Sink.fold(DtoAverageEvent(eventType, 0d, 0)){ (a, b) =>
+//      a.copy(
+//        value = a.value + b.get.value,
+//        processedCount = a.processedCount + 1)
+//      }
+//    source
+//      .via(recordToEvent)
+//      .filter { me =>
+//        me.isDefined &&
+//          me.get.eventType == eventType &&
+//          me.get.timestamp >= from &&
+//          me.get.timestamp <= to
+//      }
+//      .runWith(sink)
+//      .map(ae =>
+//        DtoAverageEvent(ae.eventType, (ae.value / ae.processedCount), ae.processedCount)
+//      )
+
+    val source = FileIO.fromPath(Paths.get("resources/resident-samples.log"))
+    val sink: Sink[DtoAverageEvent, Future[DtoAverageEvent]] = Sink.seq
+
 
     source
-      .via(recordToEvent)
-      .filter { me =>
-        me.isDefined &&
-          me.get.eventType == eventType &&
-          me.get.timestamp >= from &&
-          me.get.timestamp <= to
+      .via(bytesStringToString)
+      .via(splitString)
+      .fold(DtoAverageEvent(eventType, 0, 0)) {
+        (dae, modelEvents) =>
+          val filteredEvents = modelEvents.filter { me =>
+              me.eventType == eventType &&
+              me.timestamp >= from &&
+              me.timestamp <= to
+          }
+          dae.copy(
+            value = dae.value + filteredEvents.map(_.value).sum,
+            processedCount = dae.processedCount + filteredEvents.length)
       }
-      .runWith(sink)
       .map(ae =>
         DtoAverageEvent(ae.eventType, (ae.value / ae.processedCount), ae.processedCount)
       )
@@ -69,6 +93,28 @@ class ServiceConsumer @Inject()()(implicit val config: ConfigEvent, actorSystem:
         val bytes = record.data().asByteArray()
         val str = new String(bytes)
         Json.parse(str).validate[ModelEvent].asOpt
+      }
+  }
+
+  private def bytesStringToString: Flow[ByteString, String, NotUsed] = {
+    Flow[ByteString]
+      .map { byteString =>
+        byteString.utf8String
+      }
+  }
+
+  private def splitString: Flow[String, List[ModelEvent], NotUsed] = {
+    Flow[String]
+      .map { string =>
+        string.split("\n").toList
+          .flatMap { line =>
+            line.split(",").toList match {
+              case timestamp :: eventType :: value :: Nil =>
+                Some(ModelEvent(eventType, timestamp.toLong, value.toDouble))
+              case _ =>
+                None
+            }
+          }
       }
   }
 }
