@@ -1,5 +1,6 @@
 package controllers
 
+import dto.DtoAverageEvent
 import javax.inject._
 import play.api.libs.json.Json
 import play.api.mvc._
@@ -16,7 +17,13 @@ class ControllerEvent @Inject()()(implicit val controllerComponents: ControllerC
 
   def average(eventType: String, from: Long, to: Long): Action[AnyContent] = Action.async { implicit request: Request[AnyContent] =>
     serviceConsumer.average(eventType, from, to)
-      .map { result =>
+      .map { averageResults =>
+        val result = DtoAverageEvent(
+          eventType = eventType,
+          value = averageResults.accValue / averageResults.accNumber,
+          processedCount = averageResults.accNumber
+        )
+
         Ok(Json.toJson(result))
       }
   }
